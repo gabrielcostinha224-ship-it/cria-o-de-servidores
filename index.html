@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>Sirius Arquiteto | Painel</title>
+    <style>
+        body { background: #080809; color: #fff; font-family: 'Segoe UI', sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: #111113; padding: 40px; border-radius: 20px; width: 350px; border: 1px solid #1f1f22; text-align: center; }
+        h1 { color: #00ff6a; font-size: 24px; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #222; background: #000; color: #fff; box-sizing: border-box; }
+        button { width: 100%; padding: 15px; background: #00ff6a; border: none; border-radius: 12px; font-weight: bold; cursor: pointer; transition: 0.3s; }
+        button:hover { background: #00d659; transform: scale(1.05); }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>SIRIUS ARQUITETO</h1>
+        <input type="password" id="t" placeholder="Token do Bot">
+        <button onclick="ligar()">LIGAR ARQUITETO</button>
+        <p id="s"></p>
+    </div>
+    <script>
+        async function ligar() {
+            const s = document.getElementById('s');
+            s.innerText = "⏳ Ativando...";
+            const res = await fetch('/ligar-bot', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ token: document.getElementById('t').value })
+            });
+            const data = await res.json();
+            if(data.msg === "OK") s.innerText = "✅ ONLINE!";
+        }
+    </script>
+</body>
+</html>
