@@ -8,87 +8,105 @@ const {
 const app = express();
 app.use(express.json());
 
-const client = new Client({ intents: [3276799] });
+const client = new Client({ 
+    intents: [
+        GatewayIntentBits.Guilds, 
+        GatewayIntentBits.GuildMessages, 
+        GatewayIntentBits.MessageContent
+    ] 
+});
 
-// FUNÇÃO PARA REGISTRAR OS COMANDOS
+// FUNÇÃO PARA REGISTRAR COMANDOS ESCALÁVEIS
 async function registrarComandos(token, clientId) {
     const commands = [
         new SlashCommandBuilder()
-            .setName('criar')
-            .setDescription('Projeta o seu servidor personalizado')
-            .addStringOption(opt => opt.setName('tema').setDescription('Descreva como você quer o servidor').setRequired(true))
+            .setName('config-venda')
+            .setDescription('Cria um novo painel de vendas neste canal')
+            .addStringOption(opt => opt.setName('produto').setDescription('Nome do produto').setRequired(true))
+            .addNumberOption(opt => opt.setName('preco').setDescription('Valor do produto').setRequired(true))
+            .addStringOption(opt => opt.setName('descricao').setDescription('Descrição do que está sendo vendido').setRequired(true))
             .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     ].map(c => c.toJSON());
 
     const rest = new REST({ version: '10' }).setToken(token);
     try {
-        console.log('🔄 Registrando comandos...');
         await rest.put(Routes.applicationCommands(clientId), { body: commands });
-        console.log('✅ Comandos registrados com sucesso!');
+        console.log('✅ Comandos de venda registrados!');
     } catch (error) {
-        console.error('❌ Erro ao registrar comandos:', error);
+        console.error('❌ Erro:', error);
     }
 }
 
 async function iniciarBot(token) {
-    client.on('ready', () => {
-        console.log(`✅ Arquiteto Online como: ${client.user.tag}`);
-    });
-
     client.on('interactionCreate', async (i) => {
-        if (i.isChatInputCommand() && i.commandName === 'criar') {
-            const tema = i.options.getString('tema');
+        // Comando para criar vários painéis
+        if (i.isChatInputCommand() && i.commandName === 'config-venda') {
+            const produto = i.options.getString('produto');
+            const preco = i.options.getNumber('preco');
+            const desc = i.options.getString('descricao');
+
             const embed = new EmbedBuilder()
-                .setTitle("🏗️ Projeto do Servidor")
-                .setDescription(`Você quer um servidor de: **${tema}**\n\n**O que eu vou fazer:**\n• Apagar tudo e criar novos canais\n• Criar categorias estilizadas com emojis\n• Configurar cargos administrativos\n\n**Deseja iniciar a construção?**`)
-                .setColor("#00ff6a");
+                .setTitle(`📦 Loja Sirius | ${produto}`)
+                .setDescription(`${desc}\n\n**💰 Valor:** \`R$ ${preco.toFixed(2)}\``)
+                .setColor("#00ff6a")
+                .setFooter({ text: "Clique no botão abaixo para comprar" });
 
             const row = new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('sim').setLabel('Sim, Criar!').setStyle(ButtonStyle.Success),
-                new ButtonBuilder().setCustomId('nao').setLabel('Não, Cancelar').setStyle(ButtonStyle.Danger)
+                new ButtonBuilder()
+                    .setCustomId(`comprar_${produto}_${preco}`)
+                    .setLabel('Comprar Agora')
+                    .setEmoji('🛒')
+                    .setStyle(ButtonStyle.Success)
             );
 
-            await i.reply({ embeds: [embed], components: [row], ephemeral: true });
+            await i.channel.send({ embeds: [embed], components: [row] });
+            return i.reply({ content: "✅ Painel criado com sucesso!", ephemeral: true });
         }
 
+        // Lógica do Carrinho de Compras
         if (i.isButton()) {
-            if (i.customId === 'nao') return i.update({ content: "❌ Cancelado.", embeds: [], components: [] });
+            if (i.customId.startsWith('comprar_')) {
+                const [_, nomeProd, precoProd] = i.customId.split('_');
+                
+                // Criar canal de checkout privado
+                const canal = await i.guild.channels.create({
+                    name: `🛒-${i.user.username}`,
+                    type: ChannelType.GuildText,
+                    parent: i.channel.parentId,
+                    permissionOverwrites: [
+                        { id: i.guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+                        { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] },
+                        { id: client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages] }
+                    ]
+                });
 
-            if (i.customId === 'sim') {
-                const temaOriginal = i.message.embeds[0].description.split('**')[1];
-                await i.update({ content: "🚧 **Construindo... Por favor, aguarde.**", embeds: [], components: [] });
+                const checkoutEmbed = new EmbedBuilder()
+                    .setTitle("💳 Checkout Sirius")
+                    .setDescription(`Olá ${i.user}, você iniciou a compra de:\n**${nomeProd}**\n\n**Total:** \`R$ ${precoProd}\`\n\nEscolha a forma de pagamento abaixo:`)
+                    .setColor("#00ff6a");
 
-                try {
-                    const guild = i.guild;
-                    const channels = await guild.channels.fetch();
-                    for (const c of channels.values()) await c.delete().catch(() => {});
+                const botoesPgto = new ActionRowBuilder().addComponents(
+                    new ButtonBuilder().setCustomId('pagar_pix').setLabel('Pagar com PIX').setStyle(ButtonStyle.Primary).setEmoji('💎'),
+                    new ButtonBuilder().setCustomId('cancelar_compra').setLabel('Cancelar').setStyle(ButtonStyle.Danger)
+                );
 
-                    const cat1 = await guild.channels.create({ name: '───  📌 INFORMAÇÕES  ───', type: ChannelType.GuildCategory });
-                    await guild.channels.create({ name: '📢┃anúncios', parent: cat1.id });
-                    await guild.channels.create({ name: '📜┃regras', parent: cat1.id });
+                await canal.send({ content: `${i.user}`, embeds: [checkoutEmbed], components: [botoesPgto] });
+                await i.reply({ content: `✅ Carrinho aberto em ${canal}`, ephemeral: true });
+            }
 
-                    const cat2 = await guild.channels.create({ name: `───  ✨ ${temaOriginal.toUpperCase()}  ───`, type: ChannelType.GuildCategory });
-                    await guild.channels.create({ name: `💬┃chat-geral`, parent: cat2.id });
-                    await guild.channels.create({ name: `📦┃produtos`, parent: cat2.id });
-
-                    const cat3 = await guild.channels.create({ name: '───  🎫 SUPORTE  ───', type: ChannelType.GuildCategory });
-                    await guild.channels.create({ name: '🎟️┃abrir-ticket', parent: cat3.id });
-
-                    await i.followUp({ content: "✅ **Servidor construído com sucesso!**", ephemeral: true });
-                } catch (e) {
-                    console.log(e);
-                }
+            if (i.customId === 'cancelar_compra') {
+                await i.channel.send("❌ Cancelando pedido e fechando canal...");
+                setTimeout(() => i.channel.delete().catch(() => {}), 3000);
             }
         }
     });
 
     await client.login(token);
-    // Registra os comandos assim que o bot loga
     await registrarComandos(token, client.user.id);
 }
 
+// Servidor Web para Railway
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'index.html')));
-
 app.post('/ligar-bot', async (req, res) => {
     try {
         await iniciarBot(req.body.token);
@@ -97,5 +115,4 @@ app.post('/ligar-bot', async (req, res) => {
         res.send({ msg: "ERRO" });
     }
 });
-
 app.listen(process.env.PORT || 3000, '0.0.0.0');
